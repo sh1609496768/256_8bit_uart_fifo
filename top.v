@@ -32,10 +32,12 @@ module top(
 
     //reg define
     reg                 en_send;                //数据生成模块的使能信号 
-    reg [10:0]           state = IDLE;
+    reg [10:0]          state = IDLE;
     reg [7:0]           uart_din;               //TX发送的数据
     
     reg [16:0]          count;                  //计数
+
+    reg                 ready_wr_data;
 
     //wire define
 
@@ -50,9 +52,11 @@ module top(
     wire fifo_wr_en, fifo_rd_en;
     wire full, empty;
     wire almost_full, almost_empty;
-    wire fifo_wr_ok;
+    wire fifo_wr_ok;                            //FIFO写入一个数据完成的标志
+    wire fifo_rd_empty;                         //FIFO读完所有数据完成的标志
     wire fifo_wr_data;
     wire fifo_rd_data;
+    
     
 
     // reg uart_en = 0;
@@ -113,8 +117,8 @@ module top(
                 begin
                     if ( count < 256 )
                     begin
-                        en_send <= 1'b1;
-                        state <= GET_DATA;
+                        //en_send <= 1'b1;
+                        state <= RX_DATA;
                     end
                     else
                     begin
@@ -122,13 +126,50 @@ module top(
                         state <= FULL_256;   
                     end       
                 end
-                // 6、当256位8bit数据发送完毕后，进入此状态，不再接收与发送新的数据
+                // 6、数据传输完毕后，由RX接收
+                RX_DATA:
+                begin
+                   if ( uart_done )
+                   begin
+                       state <= RX_OK;
+                   end
+                   else 
+                       state <= RX_DATA;     
+                end
+                // 7、RX接收完成，将接收到的值转为并行后，传递给待写入FIFO的信号ready_wr_data
+                RX_OK:
+                begin
+                    ready_wr_data <= uart_dout;          //将接收到的值写入FIFO
+                    state <= WR_FIFO;
+                end
+                // 8、控制fifo读写信号，若写入完成，则继续获取数据，打开en_send,若写入未完成，等到其完成为止
+                WR_FIFO:
+                begin
+                    if ( fifo_wr_ok )
+                    begin
+                        en_send <= 1'b1;
+                        state <= GET_DATA;
+                    end
+                    else
+                        state <= WR_FIFO;
+                end
+
+                // 9、当256位8bit数据发送完毕后，进入此状态，不再接收与发送新的数据，准备从FIFO中读取
                 FULL_256:
                 begin
                     en_send <= 0;
                     uart_din <= 8'b0;
-                    state <= FULL_256;
+                    state <= RD_FIFO;
                 end
+
+                RD_FIFO:
+                begin
+                    if ( fifo_rd_empty )
+                        state <= EMPTY_256;
+                    else
+                        state <= RD_FIFO;
+                end
+
                 default:
                 begin
                     if ( count < 255 )
@@ -212,7 +253,8 @@ module top(
     .sys_rst_n                  ( sys_rst_n                   ),
     .almost_empty               ( almost_empty                ),
     .almost_full                ( almost_full                 ),
-                  
+    
+    .fifo_rd_empty              ( fifo_rd_empty               )
     .fifo_rd_en                 ( fifo_rd_en                  )
 );
 
