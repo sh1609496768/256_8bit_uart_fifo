@@ -65,6 +65,7 @@ module fifo_wr(
     begin
         if ( !sys_rst_n )                   //复位
         begin
+            fifo_wr_ok <= 1'b0;
             fifo_wr_en <= 1'b0;
             fifo_wr_data <= 8'b0;
             fifo_wr_state <= IDLE;
@@ -75,10 +76,15 @@ module fifo_wr(
             // fifo写数据逻辑与信号控制
             case ( fifo_wr_state )
                 IDLE:
-                    if ( almost_empty_d1 ) 
-                        fifo_wr_state <= EN_WR;
+                begin
+                    fifo_wr_ok <= 1'b0;   //回到第一个状态，说明数据发完了，将数据发送完毕信号置零
+                    if ( almost_empty_d1 )
+                    begin
+                        fifo_wr_state <= EN_WR; 
+                    end      
                     else
                         fifo_wr_state <= IDLE;
+                end
                 EN_WR:
                 //延时 10 拍
                 //原因是 FIFO IP 核内部状态信号的更新存在延时
@@ -96,13 +102,22 @@ module fifo_wr(
                     begin
                         fifo_wr_en <= 1'b0;
                         fifo_wr_data <= 8'b0;
+                        fifo_wr_state <= IDLE;
                     end
-
+                    else
+                    begin
+                        fifo_wr_en <= 1'b1;
+                        fifo_wr_data <= ready_wr_data;   //将外部数据写入
+                        fifo_wr_state <= WR_OK;
+                    end
+                WR_OK:
+                begin                                   //等一拍让写入数据稳定，并将数据写入完毕信号置1
+                    fifo_wr_ok <= 1'b1;
+                    fifo_wr_state <= WR_OK;
+                end               
                 default: fifo_wr_state <= IDLE;
             endcase
-        end
-            
+        end          
     end
-
 
 endmodule
