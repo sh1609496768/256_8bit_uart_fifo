@@ -113,7 +113,7 @@ module fifo_wr(
                 WR_OK:
                 begin                                   //等一拍让写入数据稳定，并将数据写入完毕信号置1
                     fifo_wr_ok <= 1'b1;
-                    fifo_wr_state <= WR_OK;
+                    fifo_wr_state <= IDLE;
                 end               
                 default: fifo_wr_state <= IDLE;
             endcase
