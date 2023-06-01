@@ -24,4 +24,5 @@ module fifo_rd(
     input	            sys_clk,                  //时钟
     input               sys_rst_n                //复位信号
     );
+    
 endmodule
