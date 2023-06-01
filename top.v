@@ -18,16 +18,21 @@ module top(
     parameter           UART_BPS    = 115200;                //波特率
     localparam          BPS_CNT     = CLK_FREQ/UART_BPS;   //分频系数
 
-    parameter           IDLE        = 6'b000001,
-                        GET_DATA    = 6'b000010,
-                        BUF_DATA    = 6'b000100,
-                        TX_DATA     = 6'b001000,
-                        TX_OK       = 6'b010000,
-                        FULL_256    = 6'b100000;
+    parameter           IDLE        = 11'b000_0000_0001,
+                        GET_DATA    = 11'b000_0000_0010,
+                        BUF_DATA    = 11'b000_0000_0100,
+                        TX_DATA     = 11'b000_0000_1000,
+                        TX_OK       = 11'b000_0001_0000,
+                        RX_DATA     = 11'b000_0010_0000,
+                        RX_OK       = 11'b000_0100_0000,
+                        WR_FIFO     = 11'b000_1000_0000,
+                        FULL_256    = 11'b001_0000_0000,
+                        RD_FIFO     = 11'b010_0000_0000,
+                        EMPTY_256   = 11'b100_0000_0000;
 
     //reg define
     reg                 en_send;                //数据生成模块的使能信号 
-    reg [5:0]           state = IDLE;
+    reg [10:0]           state = IDLE;
     reg [7:0]           uart_din;               //TX发送的数据
     
     reg [16:0]          count;                  //计数
