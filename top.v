@@ -162,7 +162,7 @@ module top(
     .data_8bit                          ( data_8bit                )
 );
     // FIFO_ip例化
-    fifo_256_8bit u_fifo_256_8bit (
+    fifo_256_8bit  u_fifo_256_8bit      (
     .wr_clk                             ( wr_clk                   ),                // input wire wr_clk
     .rd_clk                             ( rd_clk                   ),                // input wire rd_clk
     .din                                ( din                      ),                      // input wire [7 : 0] din
@@ -177,7 +177,17 @@ module top(
     .wr_data_count                      ( wr_data_count            )  // output wire [7 : 0] wr_data_count
 );
 
+    fifo_wr        u_fifo_wr    (
+    .sys_clk                    ( sys_clk                     ),
+    .sys_rst_n                  ( sys_rst_n                   ),
+    .almost_empty               ( almost_empty                ),
+    .almost_full                ( almost_full                 ),
+    .ready_wr_data              ( ready_wr_data               ),
 
+    .fifo_wr_ok                 ( fifo_wr_ok                  ),
+    .fifo_wr_en                 ( fifo_wr_en                  ),
+    .fifo_wr_data               ( fifo_wr_data                )
+);
 
 
 
