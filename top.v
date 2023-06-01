@@ -97,7 +97,7 @@ module top(
                 // 5、传输结束状态，根据计数值选择是继续获取数据还是结束获取数据
                 TX_OK:
                 begin
-                    if ( count < 255 )
+                    if ( count < 256 )
                     begin
                         en_send <= 1'b1;
                         state <= GET_DATA;
