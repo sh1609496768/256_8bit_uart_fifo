@@ -34,11 +34,20 @@ module top(
 
     //wire define
 
+        //uart
     wire                uart_done;
     wire                send_open_signal;       //开启数据生成模块的指示信号                     
     wire                uart_tx_busy;           //tx通道状态
     wire                data_ok;
     wire [7:0]          data_8bit;              //接收到的数据
+
+        //fifo
+    wire fifo_wr_en, fifo_rd_en;
+    wire full, empty;
+    wire almost_full, almost_empty;
+    wire fifo_wr_ok;
+    wire fifo_wr_data;
+    wire fifo_rd_data;
     
 
     // reg uart_en = 0;
@@ -132,7 +141,6 @@ module top(
 
 
 
-
     //instantiation define
     uart_rx        u_uart_rx            (
     .sys_clk                            ( sys_clk                  ),
@@ -160,15 +168,20 @@ module top(
 
     .data_ok                            ( data_ok                  ),
     .data_8bit                          ( data_8bit                )
-);
+);  
+
+
+
+
     // FIFO_ip例化
+    //读写时钟一致
     fifo_256_8bit  u_fifo_256_8bit      (
-    .wr_clk                             ( wr_clk                   ),                // input wire wr_clk
-    .rd_clk                             ( rd_clk                   ),                // input wire rd_clk
-    .din                                ( din                      ),                      // input wire [7 : 0] din
+    .wr_clk                             ( sys_clk                  ),                // input wire wr_clk
+    .rd_clk                             ( sys_clk                  ),                // input wire rd_clk
+    .din                                ( fifo_wr_data             ),                      // input wire [7 : 0] din
     .wr_en                              ( wr_en                    ),                  // input wire wr_en
     .rd_en                              ( rd_en                    ),                  // input wire rd_en
-    .dout                               ( dout                     ),                    // output wire [7 : 0] dout
+    .dout                               ( fifo_rd_data             ),                    // output wire [7 : 0] dout
     .full                               ( full                     ),                    // output wire full
     .almost_full                        ( almost_full              ),      // output wire almost_full
     .empty                              ( empty                    ),                  // output wire empty
@@ -187,6 +200,15 @@ module top(
     .fifo_wr_ok                 ( fifo_wr_ok                  ),
     .fifo_wr_en                 ( fifo_wr_en                  ),
     .fifo_wr_data               ( fifo_wr_data                )
+);
+
+    fifo_rd        u_fifo_rd    (
+    .sys_clk                    ( sys_clk                     ),
+    .sys_rst_n                  ( sys_rst_n                   ),
+    .almost_empty               ( almost_empty                ),
+    .almost_full                ( almost_full                 ),
+                  
+    .fifo_rd_en                 ( fifo_rd_en                  )
 );
 
 
