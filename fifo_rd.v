@@ -26,6 +26,7 @@ module fifo_rd(
     input               almost_empty,             //将空信号（比empty提前一个周期响应）
     input               almost_full,              //将满信号（比full提前一个周期响应
 
+    output reg          fifo_rd_empty,
     output reg          fifo_rd_en
     );
 
@@ -63,6 +64,7 @@ module fifo_rd(
         begin
             fifo_rd_en <= 1'b0;
             fifo_rd_state <= IDLE;
+            fifo_rd_empty <= 1'b0;
             dly_cnt <= 4'b0;
         end
         else
@@ -94,6 +96,7 @@ module fifo_rd(
                     if ( almost_empty )             //快空了，则停止读取
                     begin
                         fifo_rd_en <= 1'b0;
+                        fifo_rd_empty <= 1'b1;     //读完了fifo中所有内容的标志
                         fifo_rd_state <= IDLE;
                     end
                     else
