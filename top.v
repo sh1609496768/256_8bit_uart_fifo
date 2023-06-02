@@ -14,31 +14,43 @@ module top(
     );             
 
     //parameter define
-    parameter           CLK_FREQ    = 50000000;            //时钟频率
-    parameter           UART_BPS    = 115200;                //波特率
-    localparam          BPS_CNT     = CLK_FREQ/UART_BPS;   //分频系数
+    parameter           CLK_FREQ        = 50000000;            //时钟频率
+    parameter           UART_BPS        = 115200;                //波特率
+    localparam          BPS_CNT         = CLK_FREQ/UART_BPS;   //分频系数
 
-    parameter           IDLE        = 11'b000_0000_0001,
-                        GET_DATA    = 11'b000_0000_0010,
-                        BUF_DATA    = 11'b000_0000_0100,
-                        TX_DATA     = 11'b000_0000_1000,
-                        TX_OK       = 11'b000_0001_0000,
-                        RX_DATA     = 11'b000_0010_0000,
-                        RX_OK       = 11'b000_0100_0000,
-                        WR_FIFO     = 11'b000_1000_0000,
-                        FULL_256    = 11'b001_0000_0000,
-                        RD_FIFO     = 11'b010_0000_0000,
-                        EMPTY_256   = 11'b100_0000_0000;
+    parameter           IDLE            = 15'b000_0000_0000_0001,
+                        GET_DATA        = 15'b000_0000_0000_0010,
+                        BUF_DATA        = 15'b000_0000_0000_0100,
+                        TX_RX_DATA      = 15'b000_0000_0000_1000,
+                        TX_RX_OK        = 15'b000_0000_0001_0000,
+                        WR_FIFO_READY   = 15'b000_0000_0010_0000,
+                        WR_FIFO_EN      = 15'b000_0000_0100_0000,
+                        WR_FIFO         = 15'b000_0000_1000_0000,
+                        WR_FIFO_OK      = 15'b000_0001_0000_0000,
+                        FULL_256        = 15'b000_0010_0000_0000,
+                        RD_FIFO_READY   = 15'b000_0100_0000_0000,
+                        RD_FIFO_EN      = 15'b000_1000_0000_0000,
+                        RD_FIFO         = 15'b001_0000_0000_0000,
+                        RD_OK           = 15'b010_0000_0000_0000,
+                        EMPTY_256       = 15'b100_0000_0000_0000;
+
+                        
 
     //reg define
     reg                 en_send;                //数据生成模块的使能信号 
-    reg [10:0]          state = IDLE;
+    reg [14:0]          state = IDLE;
     reg [7:0]           uart_din;               //TX发送的数据
     
     reg [16:0]          count;                  //计数
 
     reg                 ready_wr_data;
 
+
+        //fifo
+    reg [3:0]           fifo_dly_cnt;
+    reg fifo_wr_en, fifo_rd_en;
+    reg fifo_wr_data;                          //写入FIFO的数据
+    
     //wire define
 
         //uart
@@ -49,12 +61,12 @@ module top(
     wire [7:0]          data_8bit;              //接收到的数据
 
         //fifo
-    wire fifo_wr_en, fifo_rd_en;
+  
     wire full, empty;
     wire almost_full, almost_empty;
     wire fifo_wr_ok;                            //FIFO写入一个数据完成的标志
     wire fifo_rd_empty;                         //FIFO读完所有数据完成的标志
-    wire fifo_wr_data;
+    
     wire fifo_rd_data;
     
     
@@ -101,24 +113,24 @@ module top(
                 // 3、缓冲等待一个周期，主要是为了等待busy信号
                 //（busy信号比tx使能信号要慢两拍，比TX_DATA状态慢一拍，所以加入缓冲BUF_DATA状态，使TX_DATA状态与busy同步）
                 BUF_DATA:
-                    state <= TX_DATA;
-                // 4、传输过程与busy同步，比busy慢一拍结束
-                TX_DATA:
+                    state <= TX_RX_DATA;
+                // 4、传输TX，RX同时，当RX接收完毕后，进入写FIFO，（接收传输过程与uart_done同步，比busy慢一拍结束）
+                TX_RX_DATA:
                 begin
-                    if ( uart_tx_busy ) //没发完
+                    if ( ! uart_done ) //没发完,没收完
                     begin    
-                        state <= TX_DATA;
+                        state <= TX_RX_DATA;
                     end
-                    else                //发完了,接着去GET
-                        state <= TX_OK;
+                    else                //发完了,收完了，接着去写入FIFO
+                        state <= TX_RX_OK;
                 end
                 // 5、传输结束状态，根据计数值选择是继续获取数据还是结束获取数据
-                TX_OK:
+                TX_RX_OK:
                 begin
                     if ( count < 256 )
                     begin
                         //en_send <= 1'b1;
-                        state <= RX_DATA;
+                        state <= WR_FIFO_READY;
                     end
                     else
                     begin
@@ -126,32 +138,52 @@ module top(
                         state <= FULL_256;   
                     end       
                 end
-                // 6、数据传输完毕后，由RX接收
-                RX_DATA:
+                // 6、数据传输与接收完毕后，开始控制FIFO写使能
+                WR_FIFO_READY:
                 begin
-                   if ( uart_done )
-                   begin
-                       state <= RX_OK;
-                   end
-                   else 
-                       state <= RX_DATA;     
-                end
-                // 7、RX接收完成，将接收到的值转为并行后，传递给待写入FIFO的信号ready_wr_data
-                RX_OK:
-                begin
-                    ready_wr_data <= uart_dout;          //将接收到的值写入FIFO
-                    state <= WR_FIFO;
-                end
-                // 8、控制fifo读写信号，若写入完成，则继续获取数据，打开en_send,若写入未完成，等到其完成为止
-                WR_FIFO:
-                begin
-                    if ( fifo_wr_ok )
+                    if ( almost_empty )
                     begin
-                        en_send <= 1'b1;
-                        state <= GET_DATA;
+                        state <= WR_FIFO_EN; 
+                    end      
+                    else
+                        state <= WR_FIFO_READY;
+                end
+
+                WR_FIFO_EN:
+                //延时 10 拍
+                //原因是 FIFO IP 核内部状态信号的更新存在延时
+                //延迟 10 拍以等待状态信号更新完毕 
+                begin
+                    if ( fifo_dly_cnt == 4'd10 )
+                    begin
+                        fifo_wr_en <= 1'b1;        //控制写使能信号
+                        fifo_dly_cnt <= 4'b0;
+                        state <= WR_FIFO;
                     end
                     else
-                        state <= WR_FIFO;
+                        fifo_dly_cnt <= fifo_dly_cnt + 1;
+                end
+
+                WR_FIFO:
+                begin
+                    if ( almost_full )             //快满了，则停止发送
+                    begin
+                        fifo_wr_en <= 1'b0;
+                        fifo_wr_data <= 8'b0;
+                        state <= FULL_256;
+                    end
+                    else
+                    begin
+                        fifo_wr_en <= 1'b1;
+                        fifo_wr_data <= uart_dout;   //将接收到的数据写入
+                        state <= WR_FIFO_OK;
+                    end
+                end
+
+                WR_FIFO_OK:
+                begin                                   //等一拍让写入数据稳定，并将数据写入完毕信号置1
+                    en_send <= 1'b1;
+                    state <= GET_DATA;
                 end
 
                 // 9、当256位8bit数据发送完毕后，进入此状态，不再接收与发送新的数据，准备从FIFO中读取
@@ -159,15 +191,48 @@ module top(
                 begin
                     en_send <= 0;
                     uart_din <= 8'b0;
-                    state <= RD_FIFO;
+                    fifo_wr_en <= 1'b0;
+                    state <= RD_FIFO_READY;
                 end
 
-                RD_FIFO:
+                RD_FIFO_READY:
                 begin
-                    if ( fifo_rd_empty )
-                        state <= EMPTY_256;
+                    if ( almost_full )
+                    begin
+                        state <= RD_FIFO_EN; 
+                    end      
                     else
+                        state <= RD_FIFO_READY;
+                end
+
+                RD_FIFO_EN:
+                //延时 10 拍
+                //原因是 FIFO IP 核内部状态信号的更新存在延时
+                //延迟 10 拍以等待状态信号更新完毕 
+                    if ( fifo_dly_cnt == 4'd10 )
+                    begin
+                        fifo_rd_en <= 1'b1;        //控制写使能信号
+                        fifo_dly_cnt <= 4'b0;
                         state <= RD_FIFO;
+                    end
+                    else
+                        fifo_dly_cnt <= fifo_dly_cnt + 1;
+
+                RD_FIFO:
+                    if ( almost_empty )             //快空了，则停止读取
+                    begin
+                        fifo_rd_en <= 1'b0;
+                        state <= EMPTY_256;
+                    end
+                    else
+                    begin
+                        fifo_rd_en <= 1'b1;
+                        state <= RD_OK;
+                    end
+                
+                RD_OK:                          //等一拍让读出数据稳定，
+                begin
+                    state <= RD_FIFO_READY;
                 end
 
                 default:
@@ -180,10 +245,6 @@ module top(
                 end 
             endcase
     end
-
-
-
-
 
 
 
@@ -217,8 +278,6 @@ module top(
 );  
 
 
-
-
     // FIFO_ip例化
     //读写时钟一致
     fifo_256_8bit  u_fifo_256_8bit      (
@@ -236,27 +295,27 @@ module top(
     .wr_data_count                      ( wr_data_count            )  // output wire [7 : 0] wr_data_count
 );
 
-    fifo_wr        u_fifo_wr    (
-    .sys_clk                    ( sys_clk                     ),
-    .sys_rst_n                  ( sys_rst_n                   ),
-    .almost_empty               ( almost_empty                ),
-    .almost_full                ( almost_full                 ),
-    .ready_wr_data              ( ready_wr_data               ),
+//     fifo_wr        u_fifo_wr    (
+//     .sys_clk                    ( sys_clk                     ),
+//     .sys_rst_n                  ( sys_rst_n                   ),
+//     .almost_empty               ( almost_empty                ),
+//     .almost_full                ( almost_full                 ),
+//     .ready_wr_data              ( ready_wr_data               ),
 
-    .fifo_wr_ok                 ( fifo_wr_ok                  ),
-    .fifo_wr_en                 ( fifo_wr_en                  ),
-    .fifo_wr_data               ( fifo_wr_data                )
-);
+//     .fifo_wr_ok                 ( fifo_wr_ok                  ),
+//     .fifo_wr_en                 ( fifo_wr_en                  ),
+//     .fifo_wr_data               ( fifo_wr_data                )
+// );
 
-    fifo_rd        u_fifo_rd    (
-    .sys_clk                    ( sys_clk                     ),
-    .sys_rst_n                  ( sys_rst_n                   ),
-    .almost_empty               ( almost_empty                ),
-    .almost_full                ( almost_full                 ),
+//     fifo_rd        u_fifo_rd    (
+//     .sys_clk                    ( sys_clk                     ),
+//     .sys_rst_n                  ( sys_rst_n                   ),
+//     .almost_empty               ( almost_empty                ),
+//     .almost_full                ( almost_full                 ),
     
-    .fifo_rd_empty              ( fifo_rd_empty               )
-    .fifo_rd_en                 ( fifo_rd_en                  )
-);
+//     .fifo_rd_empty              ( fifo_rd_empty               ),
+//     .fifo_rd_en                 ( fifo_rd_en                  )
+// );
 
 
 
