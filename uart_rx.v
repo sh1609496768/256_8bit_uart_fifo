@@ -37,13 +37,13 @@ module uart_rx(
 
 
     reg                 uart_rxd_d0;                                             //存储当前rx通道值,比rx慢了一拍
-    (* mark_debug = "true" *)reg                 uart_rxd_d1;                    //存储上一时刻rx通道值，比rx慢了两拍
-    (* mark_debug = "true" *)reg                 rx_flag;                        //接收过程的标志信号
-    (* mark_debug = "true" *)reg[3:0]            rx_cnt;                         //指示传输状态
+    reg                 uart_rxd_d1;                    //存储上一时刻rx通道值，比rx慢了两拍
+    reg                 rx_flag;                        //接收过程的标志信号
+    reg[3:0]            rx_cnt;                         //指示传输状态
     reg[16:0]           clk_cnt;                        //周期计数，位宽取决于波特率和系统时钟频率（一个波特率周期的大小
-    (* mark_debug = "true" *)reg[7:0]            rx_data;                        //中间变量，寄存rxd通道输入端口的值，最后并行值输出给uart_dout
+    reg[7:0]            rx_data;                        //中间变量，寄存rxd通道输入端口的值，最后并行值输出给uart_dout
 
-    (* mark_debug = "true" *)wire                start_flag;                    //下降沿标志
+    wire                start_flag;                    //下降沿标志
 
     // step1：根据接收数据uart_rxd的第一个下降沿(下降沿检测)，使start_flag信号有效，表明串行数据start下降沿标志来了(tx发送的数据起始位为0)
     assign start_flag = uart_rxd_d1 & ( ~ uart_rxd_d0 );        //下降沿检测

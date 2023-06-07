@@ -25,8 +25,8 @@
 module uart_tx(
     input	      sys_clk,                  //时钟
     input         sys_rst_n,                //复位信号
-    (* mark_debug = "true" *)input         uart_en,                  //uart使能
-    (* mark_debug = "true" *)input  [7:0]  uart_din,                 //输入数据
+    input         uart_en,                  //uart使能
+    input  [7:0]  uart_din,                 //输入数据
     output        uart_tx_busy,             //tx通道可用状态标志     
     output  reg   uart_txd                  //UART发送端
     );
@@ -44,7 +44,7 @@ reg [15:0] clk_cnt;                         //时钟周期计数
 (* mark_debug = "true" *)reg        tx_flag;                         //传输开始表示
 reg [ 7:0] tx_data;                         //寄存输入的并行信号
 //wire define
-wire       en_flag;                         //使能标志
+(* mark_debug = "true" *)wire       en_flag;                         //使能标志
 
 //*****************************************************
 //**                    main code
