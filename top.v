@@ -52,6 +52,9 @@ module top(
     reg [3:0]           fifo_dly_cnt;
     reg                 fifo_wr_en, fifo_rd_en;
     reg [7:0]           fifo_wr_data;                          //写入FIFO的数据
+
+
+    reg                 trigger;
     
     //wire define
 
@@ -94,6 +97,7 @@ module top(
             fifo_dly_cnt <= 4'b0;
             fifo_wr_en <= 1'b0;
             fifo_rd_en <= 1'b0;
+            trigger <= 1'b0;
         end
         else
             case( state )
@@ -103,6 +107,7 @@ module top(
                     if ( ! uart_tx_busy )       // tx不忙，则开启数据生成器
                     begin
                         en_send <= 1'b1;
+                        trigger <= 1'b1;
                         state <= GET_DATA;  
                     end
                     else state <= IDLE;
@@ -140,7 +145,7 @@ module top(
                 // 5、传输结束状态，根据计数值选择是继续获取数据还是结束获取数据
                 TX_RX_OK:
                 begin
-                    if ( count < 256 )
+                    if ( count < 257 )      //共256个数需要传输TX、接收RX、写入FIFO_WR、读出FIFO_RD
                     begin
                         if ( bps_cnt < ( BPS_CNT - 1 ) )                    //延迟一个波特率周期，为了使uart_done能正确融入时序逻辑
                             bps_cnt <= bps_cnt + 1;
@@ -178,7 +183,7 @@ module top(
 
                 WR_FIFO:
                 begin
-                    if ( almost_full )             //快满了，则停止发送
+                    if ( full )             //满了，则停止发送
                     begin
                         fifo_wr_en <= 1'b0;
                         fifo_wr_data <= 8'b0;
@@ -205,55 +210,57 @@ module top(
                     en_send <= 0;
                     uart_din <= 8'b0;
                     fifo_wr_en <= 1'b0;
-                    state <= RD_FIFO_READY;
+                    state <= RD_FIFO_READY;             
                 end
 
                 RD_FIFO_READY:
                 begin
-                        state <= RD_FIFO_EN; 
+                    state <= RD_FIFO_READY;             //将此处改为RD_FIFO_EN则是原版功能：自动执行完所有读FIFO
+                                                        //此处若是RD_FIFO_READY，则是用VIO控制的调试版本，
+                                                        //即根据VIO为FIFO读使能信号，VIO人为控制
                 end      
 
-                RD_FIFO_EN:
+                // RD_FIFO_EN:
                 
-                    state <= RD_FIFO;
+                //     state <= RD_FIFO;
                     
 
-                RD_FIFO:
-                    if ( almost_empty )             //快空了，则停止读取
-                    begin
-                        fifo_rd_en <= 1'b0;
-                        state <= EMPTY_256;
-                    end
-                    else
-                    begin
-                        //延时 10 拍
-                        //原因是 FIFO IP 核内部状态信号的更新存在延时
-                        //延迟 10 拍以等待状态信号更新完毕
-                        if ( fifo_dly_cnt == 4'd10 )
-                        begin
-                            fifo_rd_en <= 1'b1;        //控制写使能信号
-                            fifo_dly_cnt <= 4'b0;
-                            state <= RD_OK;
-                        end
-                        else
-                            fifo_dly_cnt <= fifo_dly_cnt + 1;
-                    end
+                // RD_FIFO:
+                //     if ( empty )             //空了，则停止读取
+                //     begin
+                //         fifo_rd_en <= 1'b0;
+                //         state <= EMPTY_256;
+                //     end
+                //     else
+                //     begin
+                //         //延时 10 拍
+                //         //原因是 FIFO IP 核内部状态信号的更新存在延时
+                //         //延迟 10 拍以等待状态信号更新完毕
+                //         if ( fifo_dly_cnt == 4'd10 )
+                //         begin
+                //             fifo_rd_en <= 1'b1;        //控制写使能信号
+                //             fifo_dly_cnt <= 4'b0;
+                //             state <= RD_OK;
+                //         end
+                //         else
+                //             fifo_dly_cnt <= fifo_dly_cnt + 1;
+                //     end
                 
-                RD_OK:                          //等一拍让读出数据稳定，
-                begin
-                    fifo_rd_en <= 1'b0;
-                    state <= RD_FIFO_READY;
-                end
+                // RD_OK:                          //等一拍让读出数据稳定，
+                // begin
+                //     fifo_rd_en <= 1'b0;
+                //     state <= RD_FIFO_READY;
+                // end
 
-                EMPTY_256:
-                begin
-                    fifo_rd_en <= 1'b0;
-                    state <= EMPTY_256;
-                end
+                // EMPTY_256:
+                // begin
+                //     fifo_rd_en <= 1'b0;
+                //     state <= EMPTY_256;
+                // end
 
                 default:
                 begin
-                    if ( count < 256 )
+                    if ( count < 257 )
                     begin
                         state <= IDLE;
                     end
@@ -263,12 +270,11 @@ module top(
     end
 
 
-
     //instantiation define
     uart_rx        u_uart_rx            (
     .sys_clk                            ( sys_clk                  ),
     .sys_rst_n                          ( sys_rst_n                ),
-    .uart_rxd                           ( uart_txd                 ),      //tx的io口接到发送给rx的io口（自发自收）
+    .uart_rxd                           ( uart_rxd                 ),      //tx的io口接到发送给rx的io口（自发自收）
 
     .uart_dout                          ( uart_dout                ),
     .uart_done                          ( uart_done                )
@@ -301,7 +307,7 @@ module top(
     .rd_clk                             ( sys_clk                  ),                // input wire rd_clk
     .din                                ( fifo_wr_data             ),                      // input wire [7 : 0] din
     .wr_en                              ( fifo_wr_en               ),                  // input wire wr_en
-    .rd_en                              ( fifo_rd_en               ),                  // input wire rd_en
+    .rd_en                              ( probe_out0               ),                  // input wire rd_en
     .dout                               ( fifo_rd_data             ),                    // output wire [7 : 0] dout
     .full                               ( full                     ),                    // output wire full
     .almost_full                        ( almost_full              ),      // output wire almost_full
@@ -309,6 +315,13 @@ module top(
     .almost_empty                       ( almost_empty             ),    // output wire almost_empty
     .rd_data_count                      ( rd_data_count            ),  // output wire [7 : 0] rd_data_count
     .wr_data_count                      ( wr_data_count            )  // output wire [7 : 0] wr_data_count
+);
+
+    //VIO虚拟控制
+fifo_rd_vio_0 your_instance_name        (
+    .clk(sys_clk),                                                      // input wire clk
+    .probe_in0(fifo_rd_data),                                          // input wire [7 : 0] probe_in0
+    .probe_out0(probe_out0)                                         //output wire [0 : 0] probe_out0
 );
 
 //     fifo_wr        u_fifo_wr    (
@@ -351,24 +364,48 @@ module top(
     //         conut <= 16'b0;
     //     end
     // end
+
+    (* mark_debug = "true" *) reg [7: 0]                      data_8bit_ila;
+    (* mark_debug = "true" *) reg [7: 0]                      uart_din_ila;
+
+    (* mark_debug = "true" *) reg [14:0]                      state_ila;
+    (* mark_debug = "true" *) reg [7: 0]                      fifo_wr_data_ila;
+    (* mark_debug = "true" *) reg [7: 0]                      fifo_rd_data_ila;
+    (* mark_debug = "true" *) reg                             fifo_wr_en_ila;
+    (* mark_debug = "true" *) reg                             fifo_rd_en_ila;
+    (* mark_debug = "true" *) reg                             full_ila;
+    (* mark_debug = "true" *) reg                             empty_ila;
+
+
     
     (* mark_debug = "true" *) reg                      uart_rxd_ila;                //UART接收端
     (* mark_debug = "true" *) reg                      uart_txd_ila;                //UART发送端
-    // (* mark_debug = "true" *) reg [7:0]                uart_dout_ila;
-    // (* mark_debug = "true" *) reg                      uart_done_ila;
+    (* mark_debug = "true" *) reg [7:0]                uart_dout_ila;
+    (* mark_debug = "true" *) reg                      uart_done_ila;
     (* mark_debug = "true" *) reg                      data_ok_ila;
-    (* mark_debug = "true" *) reg                      uart_tx_busy_ila;
-    (* mark_debug = "true" *) reg[5:0]                 state_ila;
+
+    (* mark_debug = "true" *) reg                      trigger_ila;
+    // (* mark_debug = "true" *) reg                      uart_tx_busy_ila;
+    // (* mark_debug = "true" *) reg[5:0]                 state_ila;
 
 
     always @(posedge sys_clk) begin
+        data_8bit_ila <= data_8bit; 
+        uart_din_ila <= uart_din;
         uart_rxd_ila <= uart_rxd;
         uart_txd_ila <= uart_txd;
-        // uart_dout_ila <= uart_dout;
-        // uart_done_ila <= uart_done;
+        uart_dout_ila <= uart_dout;
+        uart_done_ila <= uart_done;
         state_ila <= state;
         data_ok_ila <= data_ok;
-        uart_tx_busy_ila <= uart_tx_busy;
+        // uart_tx_busy_ila <= uart_tx_busy;
+        fifo_wr_data_ila <= fifo_wr_data;
+        fifo_rd_data_ila <= fifo_rd_data;
+        fifo_wr_en_ila   <= fifo_wr_en;
+        fifo_rd_en_ila   <= probe_out0;
+        full_ila         <= full;
+        empty_ila        <= empty;
+        trigger_ila      <= trigger;
     end
 
 endmodule
